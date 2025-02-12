@@ -84,7 +84,7 @@ def generate_candidate_summary(candidate_info, resume_text):
     Current location: 
     Reason for switch: 
     """
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-2.0-flash")
     response = model.generate_content(base_prompt)
     return response.text
 
