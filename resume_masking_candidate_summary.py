@@ -7,7 +7,6 @@ import google.generativeai as genai
 
 load_dotenv()
 # Configure Gemini API
-GEMINI_API_KEY = "YOUR_GEMINI_API_KEY"
 
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 # Regular expressions for detecting sensitive data
