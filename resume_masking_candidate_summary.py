@@ -7,8 +7,8 @@ import google.generativeai as genai
 
 load_dotenv()
 # Configure Gemini API
-
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+
 # Regular expressions for detecting sensitive data
 PHONE_REGEX = r'(\+?\d{1,4}[-.\s]?)?(\(?\d{1,4}\)?[-.\s]?)?(\d{3}[-.\s]?\d{3,4}[-.\s]?\d{3,4})\b'
 EMAIL_REGEX = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b'
@@ -18,41 +18,46 @@ DATE_REGEX = r'\b(0[1-9]|1[0-2])\s*[-/]\s*(19|20)\d{2}\b'  # Matches dates like 
 def extract_text_from_pdf(pdf_path):
     """Extracts text from a PDF file."""
     doc = fitz.open(pdf_path)
-    text = ""
-    for page in doc:
-        text += page.get_text("text") + "\n"
+    text = "".join(page.get_text("text") for page in doc)
     doc.close()
     return text
 
 def mask_text_on_pdf(input_pdf_path, output_pdf_path):
-    """Masks sensitive details in a PDF and saves the redacted version."""
+    """Masks sensitive details in a PDF by matching the background color and saves the redacted version."""
     doc = fitz.open(input_pdf_path)
-    
+
     for page in doc:
         text_instances = []
         full_text = page.get_text("text")
-        
+
+        # Extract background color from the first pixel
+        pix = page.get_pixmap()
+        bg_color = list(pix.samples[:3])  # ✅ Convert to list (R, G, B)
+
+        # Find all sensitive text matches
         for regex in [PHONE_REGEX, EMAIL_REGEX, LINKEDIN_REGEX]:
             for match in re.finditer(regex, full_text, re.IGNORECASE):
                 if not re.match(DATE_REGEX, match.group()):  # Exclude dates
                     text_instances.append(match.group())
 
+        # Apply redaction with the matched background color
         for text in text_instances:
             text_rects = page.search_for(text)
             for rect in text_rects:
-                page.add_redact_annot(rect, fill=(0, 0, 0))
-        
+                page.add_redact_annot(rect, fill=bg_color)  # ✅ Pass list instead of tuple
+
         page.apply_redactions()
-    
+
     doc.save(output_pdf_path)
     doc.close()
 
+
 def generate_candidate_summary(candidate_info, resume_text):
-    """Generates a structured candidate summary by merging form inputs with resume text."""
+    """Generates a structured candidate summary."""
     base_prompt = f"""
     You are an experienced Technical Human Resource Manager.
     Based on the following details, structure the candidate's information:
-
+    
     Name: {candidate_info.get("Name", "")}
     Education: {candidate_info.get("Education", "")}
     Total Work Experience: {candidate_info.get("Total Work Experience", "")}
@@ -68,20 +73,8 @@ def generate_candidate_summary(candidate_info, resume_text):
     Additional extracted details from resume:
     {resume_text[:5000]}  # Limiting extracted text for context
     
-    Don't share the contact details in the candidate summary. Prioritize the information shared in the Roles and responsibilities handled section. 
-    
-    Please format the output in a structured and professional manner.  Structure the summary in the format given below
-    Name: 
-    Education: 
-    Total Work Experience: 
-    Relevant Work Experience: 
-    Companies worked for: 
-    Roles and responsibilities handled: 
-    Current CTC: 
-    Expected CTC: 
-    Notice period: 
-    Current location: 
-    Reason for switch: 
+    Don't share contact details. Prioritize roles and responsibilities.
+    Format the output professionally:
     """
     model = genai.GenerativeModel("gemini-1.5-flash")
     response = model.generate_content(base_prompt)
@@ -102,7 +95,7 @@ if uploaded_file:
     mask_text_on_pdf(input_pdf_path, output_pdf_path)
     
     with open(output_pdf_path, "rb") as f:
-        st.download_button(label="Download Redacted Resume", data=f, file_name=output_pdf_path, mime="application/pdf")
+        st.download_button("Download Redacted Resume", f, file_name=output_pdf_path, mime="application/pdf")
     
     resume_text = extract_text_from_pdf(input_pdf_path)
     os.remove(input_pdf_path)
@@ -111,7 +104,7 @@ else:
     resume_text = ""
 
 st.subheader("Generate Candidate Summary")
-st.write("Fill out the candidate details below, and the AI will generate a structured profile.")
+st.write("Fill out the candidate details below to generate a structured profile.")
 
 with st.form("candidate_form"):
     candidate_info = {
@@ -133,3 +126,4 @@ if submit_button:
     summary = generate_candidate_summary(candidate_info, resume_text)
     st.subheader("Generated Candidate Summary")
     st.text_area("Summary", summary, height=400)
+
